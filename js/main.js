@@ -66,28 +66,32 @@ document.addEventListener('DOMContentLoaded', function() {
         const fileURL = URL.createObjectURL(file);
         audioElement.src = fileURL;
 
-        // Si es MP3 usamos jsmediatags
-        if (file.name.toLowerCase().endsWith('.mp3')) {
-            window.jsmediatags.read(file, {
-                onSuccess: function(tag) {
-                    const data = tag.tags;
-                    if (data.title) songTitle.textContent = data.title;
-                    if (data.artist) {
-                        songArtist.textContent = data.artist;
-                        if (data.album) songArtist.textContent += ` • ${data.album}`;
-                    }
-                    if (data.picture) {
-                        const base64String = byteArrayToBase64(data.picture.data);
-                        const imageType = data.picture.format || 'image/jpeg';
-                        coverContainer.innerHTML = `<img src="data:${imageType};base64,${base64String}" alt="Portada">`;
-                    }
+        // 1. Intentar con jsmediatags (para MP3)
+        window.jsmediatags.read(file, {
+            onSuccess: function(tag) {
+                const data = tag.tags;
+                if (data.title) songTitle.textContent = data.title;
+                if (data.artist) {
+                    songArtist.textContent = data.artist;
+                    if (data.album) songArtist.textContent += ` • ${data.album}`;
+                } else if (data.album) {
+                    songArtist.textContent = data.album;
                 }
-            });
-        } 
-        // Si es M4A de iTunes, usamos el parser MP4Box integrado en el HTML
-        else if (file.name.toLowerCase().endsWith('.m4a')) {
-            parseM4AWithMP4Box(file);
-        }
+
+                if (data.picture) {
+                    const base64String = byteArrayToBase64(data.picture.data);
+                    const imageType = data.picture.format || 'image/jpeg';
+                    coverContainer.innerHTML = `<img src="data:${imageType};base64,${base64String}" alt="Portada">`;
+                } else if (file.name.toLowerCase().endsWith('.m4a')) {
+                    extractM4AImagesMagicBytes(file);
+                }
+            },
+            onError: function() {
+                if (file.name.toLowerCase().endsWith('.m4a')) {
+                    extractM4AImagesMagicBytes(file);
+                }
+            }
+        });
 
         audioElement.load();
         audioElement.play().then(() => {
@@ -99,92 +103,40 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Extractor nativo y robusto para archivos M4A usando MP4Box.js
-    function parseM4AWithMP4Box(file) {
+    // Extractor infalible buscando firmas de bytes de imagen (JPEG / PNG) dentro del M4A
+    function extractM4AImagesMagicBytes(file) {
         const reader = new FileReader();
         reader.onload = function(e) {
-            const arrayBuffer = e.target.result;
-            arrayBuffer.fileStart = 0;
+            const buffer = e.target.result;
+            const bytes = new Uint8Array(buffer);
 
-            const mp4boxfile = MP4Box.createFile();
+            let imageStartIndex = -1;
+            let imageType = 'image/jpeg';
 
-            mp4boxfile.onReady = function(info) {
-                // Metadatos de texto
-                if (info.metadata) {
-                    if (info.metadata.title) songTitle.textContent = info.metadata.title;
-                    let artistStr = info.metadata.artist || info.metadata.album_artist || "";
-                    if (info.metadata.album) {
-                        artistStr += artistStr ? ` • ${info.metadata.album}` : info.metadata.album;
-                    }
-                    if (artistStr) songArtist.textContent = artistStr;
+            // Buscar la firma de JPEG (FF D8 FF) o PNG (89 50 4E 47) en los bytes del archivo
+            for (let i = 0; i < bytes.length - 8; i++) {
+                // Firma JPEG: FF D8 FF
+                if (bytes[i] === 0xFF && bytes[i+1] === 0xD8 && bytes[i+2] === 0xFF) {
+                    imageStartIndex = i;
+                    imageType = 'image/jpeg';
+                    break;
                 }
-
-                // Extracción de carátula desde los tracks de carátula o user data de MP4Box
-                if (info.tracks) {
-                    info.tracks.forEach(track => {
-                        if (track.avcdata && track.avcdata.length > 0) {
-                            renderCoverImage(track.avcdata);
-                        }
-                    });
+                // Firma PNG: 89 50 4E 47
+                if (bytes[i] === 0x89 && bytes[i+1] === 0x50 && bytes[i+2] === 0x4E && bytes[i+3] === 0x47) {
+                    imageStartIndex = i;
+                    imageType = 'image/png';
+                    break;
                 }
-            };
-
-            // Extracción directa de la caja 'covr' mediante inspección de búfer de bytes de iTunes
-            const view = new DataView(arrayBuffer);
-            let offset = 0;
-            while (offset < arrayBuffer.byteLength - 8) {
-                let size = view.getUint32(offset);
-                let type = String.fromCharCode(view.getUint8(offset+4), view.getUint8(offset+5), view.getUint8(offset+6), view.getUint8(offset+7));
-                if (size === 1 && offset + 16 <= arrayBuffer.byteLength) {
-                    size = Number(view.getBigUint64(offset + 8));
-                }
-                if (size === 0 || offset + size > arrayBuffer.byteLength) break;
-
-                if (type === 'moov' || type === 'udta' || type === 'meta' || type === 'ilst') {
-                    if (findAndRenderCovr(view, offset + 8, offset + size)) {
-                        break;
-                    }
-                }
-                offset += size;
             }
 
-            mp4boxfile.appendBuffer(arrayBuffer);
-            mp4boxfile.flush();
+            if (imageStartIndex !== -1) {
+                // Cortamos los bytes desde donde empieza la imagen hasta un tamaño seguro o el final
+                const imgBytes = bytes.subarray(imageStartIndex);
+                const base64String = byteArrayToBase64(imgBytes);
+                coverContainer.innerHTML = `<img src="data:${imageType};base64,${base64String}" alt="Portada">`;
+            }
         };
         reader.readAsArrayBuffer(file);
-    }
-
-    function findAndRenderCovr(view, start, end) {
-        let pos = start;
-        while (pos < end - 8) {
-            let size = view.getUint32(pos);
-            if (pos + 8 > end) break;
-            let type = String.fromCharCode(view.getUint8(pos+4), view.getUint8(pos+5), view.getUint8(pos+6), view.getUint8(pos+7));
-            
-            if (type === 'covr') {
-                let dataPos = pos + 8;
-                if (dataPos + 12 <= end) {
-                    let dataSize = view.getUint32(dataPos);
-                    let dataType = String.fromCharCode(view.getUint8(dataPos+4), view.getUint8(dataPos+5), view.getUint8(dataPos+6), view.getUint8(dataPos+7));
-                    if (dataType === 'data' && dataPos + 16 <= end) {
-                        let imgBytes = new Uint8Array(view.buffer, dataPos + 16, dataSize - 16);
-                        renderCoverImage(imgBytes);
-                        return true;
-                    }
-                }
-            } else if (['moov', 'udta', 'meta', 'ilst', '©nam', '©ART'].includes(type) || size > 12) {
-                if (findAndRenderCovr(view, pos + 8, pos + size)) return true;
-            }
-            pos += size > 0 ? size : 4;
-        }
-        return false;
-    }
-
-    function renderCoverImage(imgBytes) {
-        const base64String = byteArrayToBase64(imgBytes);
-        const isPng = imgBytes[0] === 0x89 && imgBytes[1] === 0x50;
-        const imgType = isPng ? 'image/png' : 'image/jpeg';
-        coverContainer.innerHTML = `<img src="data:${imgType};base64,${base64String}" alt="Portada">`;
     }
 
     playBtn.addEventListener('click', function() {
