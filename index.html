@@ -5,16 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Simple Web Player</title>
     <link rel="stylesheet" href="css/main.css">
-    <!-- Librería jsmediatags para lectura en el navegador -->
+    <!-- Librerías de metadatos para navegador -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mp4box.js/0.5.2/mp4box.all.min.js"></script>
 </head>
 <body>
 
+    <!-- Cabecera global con Título y Reloj en tiempo real según ubicación del equipo -->
     <header class="app-header">
         <div class="app-title">Simple Web Player</div>
         <div id="live-clock" class="live-clock">--:--</div>
     </header>
 
+    <!-- Pantalla de bienvenida inicial / Dropzone -->
     <div id="welcome-screen" class="welcome-screen">
         <div class="drop-zone" id="drop-zone">
             <h2>Hola, para empezar, arrastra un archivo compatible o toca para abrir el explorador.</h2>
@@ -22,6 +25,7 @@
         </div>
     </div>
 
+    <!-- Contenedor principal del reproductor -->
     <div id="player-container" class="player-container hidden">
         <div class="upload-section">
             <label for="audio-file-input" class="custom-file-btn">📂 Cambiar archivo</label>
@@ -29,10 +33,12 @@
         </div>
 
         <div class="player-main-layout">
+            <!-- Portada adaptativa a cualquier relación de aspecto -->
             <div class="cover-container" id="cover-container">
                 <div id="cover-art" class="default-cover">♪</div>
             </div>
 
+            <!-- Información y Controles -->
             <div class="info-controls-container">
                 <div class="song-meta">
                     <h1 id="song-title">Título de la canción</h1>
@@ -42,6 +48,7 @@
 
                 <audio id="audio-element" controls style="display: none;"></audio>
 
+                <!-- Barra de progreso y visualizador -->
                 <div class="progress-visualizer-row">
                     <span id="current-time">0:00</span>
                     
@@ -54,6 +61,7 @@
                     <canvas id="visualizer" width="60" height="30"></canvas>
                 </div>
                 
+                <!-- Botón de Play/Pause con animación reactiva -->
                 <div class="play-pause-row">
                     <button id="play-btn" class="retro-play-btn">▶ Reproducir</button>
                 </div>

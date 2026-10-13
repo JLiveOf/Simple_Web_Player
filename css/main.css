@@ -20,6 +20,7 @@ body {
     100% { background-position: 0% 50%; }
 }
 
+/* Cabecera con Título y Reloj (esquinas superior izquierda y derecha) */
 .app-header {
     position: absolute;
     top: 0;
@@ -52,6 +53,7 @@ body {
     pointer-events: auto;
 }
 
+/* Pantalla de bienvenida inicial */
 .welcome-screen {
     position: absolute;
     top: 0;
@@ -108,6 +110,7 @@ body {
     cursor: pointer;
 }
 
+/* Contenedor principal del reproductor */
 .player-container {
     background: rgba(15, 15, 20, 0.9);
     padding: 30px;
@@ -157,6 +160,7 @@ body {
     align-items: center;
 }
 
+/* Portada adaptativa sin franjas vacías */
 .cover-container {
     width: 180px;
     height: auto;
@@ -223,6 +227,7 @@ body {
     font-weight: bold;
 }
 
+/* Fila de barra de progreso y visualizador */
 .progress-visualizer-row {
     display: flex;
     align-items: center;
@@ -257,6 +262,7 @@ body {
     margin-top: 5px;
 }
 
+/* Botón de reproducción con animación dinámica */
 .retro-play-btn {
     background: #333;
     color: #fff;
