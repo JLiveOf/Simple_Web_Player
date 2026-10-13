@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Web Player</title>
+    <link rel="stylesheet" href="css/main.css">
+    <!-- Librería jsmediatags para lectura en el navegador -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
+</head>
+<body>
+
+    <header class="app-header">
+        <div class="app-title">Simple Web Player</div>
+        <div id="live-clock" class="live-clock">--:--</div>
+    </header>
+
+    <div id="welcome-screen" class="welcome-screen">
+        <div class="drop-zone" id="drop-zone">
+            <h2>Hola, para empezar, arrastra un archivo compatible o toca para abrir el explorador.</h2>
+            <input type="file" id="welcome-file-input" accept=".mp3,.m4a">
+        </div>
+    </div>
+
+    <div id="player-container" class="player-container hidden">
+        <div class="upload-section">
+            <label for="audio-file-input" class="custom-file-btn">📂 Cambiar archivo</label>
+            <input type="file" id="audio-file-input" accept=".mp3,.m4a">
+        </div>
+
+        <div class="player-main-layout">
+            <div class="cover-container" id="cover-container">
+                <div id="cover-art" class="default-cover">♪</div>
+            </div>
+
+            <div class="info-controls-container">
+                <div class="song-meta">
+                    <h1 id="song-title">Título de la canción</h1>
+                    <p id="song-artist">Artista y otros datos</p>
+                    <span id="audio-quality" class="audio-quality-badge">CARGANDO...</span>
+                </div>
+
+                <audio id="audio-element" controls style="display: none;"></audio>
+
+                <div class="progress-visualizer-row">
+                    <span id="current-time">0:00</span>
+                    
+                    <div class="progress-bar-container" id="progress-container">
+                        <div class="progress-bar" id="progress-bar"></div>
+                    </div>
+
+                    <span id="duration-time">-0:00</span>
+
+                    <canvas id="visualizer" width="60" height="30"></canvas>
+                </div>
+                
+                <div class="play-pause-row">
+                    <button id="play-btn" class="retro-play-btn">▶ Reproducir</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/main.js"></script>
+</body>
+</html>
