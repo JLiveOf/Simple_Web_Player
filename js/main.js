@@ -66,32 +66,28 @@ document.addEventListener('DOMContentLoaded', function() {
         const fileURL = URL.createObjectURL(file);
         audioElement.src = fileURL;
 
-        // 1. Intentar con jsmediatags (para MP3)
-        window.jsmediatags.read(file, {
-            onSuccess: function(tag) {
-                const data = tag.tags;
-                if (data.title) songTitle.textContent = data.title;
-                if (data.artist) {
-                    songArtist.textContent = data.artist;
-                    if (data.album) songArtist.textContent += ` • ${data.album}`;
-                } else if (data.album) {
-                    songArtist.textContent = data.album;
+        // Si es MP3 usamos jsmediatags
+        if (file.name.toLowerCase().endsWith('.mp3')) {
+            window.jsmediatags.read(file, {
+                onSuccess: function(tag) {
+                    const data = tag.tags;
+                    if (data.title) songTitle.textContent = data.title;
+                    if (data.artist) {
+                        songArtist.textContent = data.artist;
+                        if (data.album) songArtist.textContent += ` • ${data.album}`;
+                    }
+                    if (data.picture) {
+                        const base64String = byteArrayToBase64(data.picture.data);
+                        const imageType = data.picture.format || 'image/jpeg';
+                        coverContainer.innerHTML = `<img src="data:${imageType};base64,${base64String}" alt="Portada">`;
+                    }
                 }
-
-                if (data.picture) {
-                    const base64String = byteArrayToBase64(data.picture.data);
-                    const imageType = data.picture.format || 'image/jpeg';
-                    coverContainer.innerHTML = `<img src="data:${imageType};base64,${base64String}" alt="Portada">`;
-                } else if (file.name.toLowerCase().endsWith('.m4a')) {
-                    extractM4AImagesMagicBytes(file);
-                }
-            },
-            onError: function() {
-                if (file.name.toLowerCase().endsWith('.m4a')) {
-                    extractM4AImagesMagicBytes(file);
-                }
-            }
-        });
+            });
+        } 
+        // Si es M4A, utilizamos análisis estructurado de cajas con MP4Box
+        else if (file.name.toLowerCase().endsWith('.m4a')) {
+            parseM4AFile(file);
+        }
 
         audioElement.load();
         audioElement.play().then(() => {
@@ -103,40 +99,118 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Extractor infalible buscando firmas de bytes de imagen (JPEG / PNG) dentro del M4A
-    function extractM4AImagesMagicBytes(file) {
+    // Extractor profesional seguro utilizando el motor MP4Box
+    function parseM4AFile(file) {
         const reader = new FileReader();
         reader.onload = function(e) {
-            const buffer = e.target.result;
-            const bytes = new Uint8Array(buffer);
+            const arrayBuffer = e.target.result;
+            arrayBuffer.fileStart = 0;
 
-            let imageStartIndex = -1;
-            let imageType = 'image/jpeg';
+            const mp4boxfile = MP4Box.createFile();
 
-            // Buscar la firma de JPEG (FF D8 FF) o PNG (89 50 4E 47) en los bytes del archivo
-            for (let i = 0; i < bytes.length - 8; i++) {
-                // Firma JPEG: FF D8 FF
-                if (bytes[i] === 0xFF && bytes[i+1] === 0xD8 && bytes[i+2] === 0xFF) {
-                    imageStartIndex = i;
-                    imageType = 'image/jpeg';
-                    break;
+            mp4boxfile.onReady = function(info) {
+                if (info.metadata) {
+                    if (info.metadata.title) songTitle.textContent = info.metadata.title;
+                    let artistStr = info.metadata.artist || info.metadata.album_artist || "";
+                    if (info.metadata.album) {
+                        artistStr += artistStr ? ` • ${info.metadata.album}` : info.metadata.album;
+                    }
+                    if (artistStr) songArtist.textContent = artistStr;
                 }
-                // Firma PNG: 89 50 4E 47
-                if (bytes[i] === 0x89 && bytes[i+1] === 0x50 && bytes[i+2] === 0x4E && bytes[i+3] === 0x47) {
-                    imageStartIndex = i;
-                    imageType = 'image/png';
-                    break;
+            };
+
+            // Búsqueda exacta del átomo de carátula 'covr' en los bloques del buffer
+            const view = new DataView(arrayBuffer);
+            let offset = 0;
+            let foundCover = false;
+
+            while (offset < arrayBuffer.byteLength - 8) {
+                let size = view.getUint32(offset);
+                if (offset + 8 > arrayBuffer.byteLength) break;
+                let type = String.fromCharCode(view.getUint8(offset+4), view.getUint8(offset+5), view.getUint8(offset+6), view.getUint8(offset+7));
+                
+                if (size === 1 && offset + 16 <= arrayBuffer.byteLength) {
+                    size = Number(view.getBigUint64(offset + 8));
                 }
+                if (size === 0 || offset + size > arrayBuffer.byteLength) break;
+
+                if (['moov', 'udta', 'meta', 'ilst'].includes(type)) {
+                    if (extractCovrFromBox(view, offset + 8, offset + size)) {
+                        foundCover = true;
+                        break;
+                    }
+                }
+                offset += size;
             }
 
-            if (imageStartIndex !== -1) {
-                // Cortamos los bytes desde donde empieza la imagen hasta un tamaño seguro o el final
-                const imgBytes = bytes.subarray(imageStartIndex);
-                const base64String = byteArrayToBase64(imgBytes);
-                coverContainer.innerHTML = `<img src="data:${imageType};base64,${base64String}" alt="Portada">`;
+            // Si la búsqueda estándar no bastó, realizamos un escaneo inteligente de bloques 'data' de imagen
+            if (!foundCover) {
+                scanForImageDataBytes(view, arrayBuffer);
             }
+
+            mp4boxfile.appendBuffer(arrayBuffer);
+            mp4boxfile.flush();
         };
         reader.readAsArrayBuffer(file);
+    }
+
+    function extractCovrFromBox(view, start, end) {
+        let pos = start;
+        while (pos < end - 8) {
+            let size = view.getUint32(pos);
+            if (pos + 8 > end) break;
+            let type = String.fromCharCode(view.getUint8(pos+4), view.getUint8(pos+5), view.getUint8(pos+6), view.getUint8(pos+7));
+            
+            if (type === 'covr') {
+                let dataPos = pos + 8;
+                if (dataPos + 12 <= end) {
+                    let dataSize = view.getUint32(dataPos);
+                    let dataType = String.fromCharCode(view.getUint8(dataPos+4), view.getUint8(dataPos+5), view.getUint8(dataPos+6), view.getUint8(dataPos+7));
+                    if (dataType === 'data' && dataPos + 16 <= end) {
+                        let imgBytes = new Uint8Array(view.buffer, dataPos + 16, dataSize - 16);
+                        if (imgBytes.length > 100) {
+                            renderCoverImage(imgBytes);
+                            return true;
+                        }
+                    }
+                }
+            } else if (['moov', 'udta', 'meta', 'ilst', '©nam', '©ART'].includes(type) || size > 12) {
+                if (extractCovrFromBox(view, pos + 8, pos + size)) return true;
+            }
+            pos += size > 0 ? size : 4;
+        }
+        return false;
+    }
+
+    // Escáner de seguridad por bloques si el contenedor de Apple está anidado de forma especial
+    function scanForImageDataBytes(view, arrayBuffer) {
+        for (let i = 0; i < arrayBuffer.byteLength - 16; i++) {
+            // Buscamos la cabecera típica de caja de datos en iTunes (tipo 'data' con indicador de imagen JPEG/PNG)
+            if (
+                view.getUint8(i) === 0x64 && view.getUint8(i+1) === 0x61 && 
+                view.getUint8(i+2) === 0x74 && view.getUint8(i+3) === 0x61
+            ) {
+                let flags = view.getUint32(i + 4);
+                // Las carátulas en iTunes suelen tener flags 0x0000000D (JPEG) o 0x0000000E (PNG)
+                if (flags === 13 || flags === 14 || flags === 0) {
+                    let boxSize = view.getUint32(i - 4);
+                    if (boxSize > 100 && boxSize < 5000000 && (i + boxSize <= arrayBuffer.byteLength)) {
+                        let imgBytes = new Uint8Array(arrayBuffer, i + 8, boxSize - 8);
+                        if (imgBytes.length > 100) {
+                            renderCoverImage(imgBytes);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    function renderCoverImage(imgBytes) {
+        const base64String = byteArrayToBase64(imgBytes);
+        const isPng = imgBytes[0] === 0x89 && imgBytes[1] === 0x50;
+        const imgType = isPng ? 'image/png' : 'image/jpeg';
+        coverContainer.innerHTML = `<img src="data:${imgType};base64,${base64String}" alt="Portada">`;
     }
 
     playBtn.addEventListener('click', function() {
